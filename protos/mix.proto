@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+package mouthwash;
+
+// RPCs: frontend <-> sound analyzation service
+
+// Analyze sound and set params for next sound
+service Mixer {
+    rpc MixANewOne (ShotElement) returns (Ingredients) {}
+    rpc ShotReview (ShotReviewSummary) returns (google.protobuf.Empty) {}
+}
+
+message ShotElement {
+    string instrument = 1;
+    bytes paramNames = 2;
+}
+
+message Ingredients {
+    string instrument = 1;
+    bytes paramValues = 2;
+}
+
+message ShotReviewSummary {
+    string name = 1;
+    int32 good = 2;
+    float waittime = 3;
+    bool timeout = 4;
+}
+

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package mouthwash;
+
+// RPCs: frontend <-> sound generation service
+
+// Call for new sound
+service Bottle {
+    rpc TakeShot (ShotCall) returns (Shot) {} // get new soundbyte
+}
+
+message ShotCall {
+    int32 command = 1;
+}
+
+message Shot {
+    string name = 1;
+    int32 length = 2;
+    string format = 3;
+    bytes sounds = 4;
+}

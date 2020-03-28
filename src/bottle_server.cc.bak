@@ -1,0 +1,109 @@
+#include "bottle_server.h"
+
+using grpc::ServerBuilder;
+using grpc::health::v1::HealthCheckResponse;
+
+BottleServiceImpl::~BottleServiceImpl() {
+    server_->Shutdown();
+    healthCq_->Shutdown();
+    bottleCq_->Shutdown();
+}
+
+void
+BottleServiceImpl::Run() {
+    std::string server_address("0.0.0.0:50051");
+
+    ServerBuilder builder;
+    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+    builder.RegisterService(&healthService_);
+    builder.RegisterService(&bottleService_);
+    cqs_.emplace_back(builder.AddCompletionQueue());
+    server_ = builder.BuildAndStart();
+    std::cout << "Server listening on " << server_address << std::endl;
+
+    HandleRpcs();
+}
+
+void
+BottleServiceImpl::HandleRpcs() {
+    // Start health service handling
+    threadGroup_.create_thread(std::bind(&BottleServiceImpl::HandleHealthRpcs, this));
+    // Start bottle service handling
+    threadGroup_.create_thread(std::bind(&BottleServiceImpl::HandleBottleRpcs, this));
+    
+    threadGroup_.join_all();
+}
+
+void
+BottleServiceImpl::HandleHealthRpcs() {
+    new CallHealthData(&healthService_, healthCq_.get());
+    void* tag;
+    bool ok;
+    while (true) {
+        GPR_ASSERT(healthCq_->Next(&tag, &ok));
+        GPR_ASSERT(ok);
+        static_cast<CallHealthData*>(tag)->Proceed();
+    }
+}
+
+void
+BottleServiceImpl::CallHealthData::Proceed() {
+    if (status_ == CREATE) {
+        status_ = PROCESS;
+
+        std::cout << "made it here" << std::endl;
+        service_->RequestWatch(&ctx_, &request_, &streamResponder_, cq_, cq_, this);
+        service_->RequestCheck(&ctx_, &request_, &responder_, cq_, cq_, this);
+        std::cout << "made it there" << std::endl;
+        //TODO start thread for each stream
+    } else if (status_ == PROCESS) {
+        new CallHealthData(service_, cq_);
+
+        response_.set_status(
+                HealthCheckResponse::SERVING
+        );
+
+        status_ = FINISH;
+        responder_.Finish(response_, Status::OK, this);
+    } else {
+        GPR_ASSERT(status_ == FINISH);
+        delete this;
+        std::cout << "Sent health check response." << std::endl;
+    }
+}
+
+void
+BottleServiceImpl::HandleBottleRpcs() {
+    new CallBottleData(&bottleService_, bottleCq_.get());
+    void* tag;
+    bool ok;
+    while (true) {
+        GPR_ASSERT(bottleCq_->Next(&tag, &ok));
+        GPR_ASSERT(ok);
+        static_cast<CallBottleData*>(tag)->Proceed();
+    }
+}
+
+void
+BottleServiceImpl::CallBottleData::Proceed() {
+    if (status_ == CREATE) {
+        status_ = PROCESS;
+
+        service_->RequestTakeShot(&ctx_, &request_, &responder_, cq_, cq_, this);
+    } else if (status_ == PROCESS) {
+        new CallBottleData(service_, cq_);
+
+        std::string name("test");
+        int length = 0;
+        std::string soundbyte_format("test");
+        response_.set_name(name);
+        response_.set_length(length);
+        response_.set_format(soundbyte_format);
+
+        status_ = FINISH;
+        responder_.Finish(response_, Status::OK, this);
+    } else {
+        GPR_ASSERT(status_ == FINISH);
+        delete this;
+    }
+}

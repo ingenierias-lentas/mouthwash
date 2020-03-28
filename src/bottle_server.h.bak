@@ -1,0 +1,105 @@
+#pragma once
+
+#include <iostream>
+#include <memory>
+#include <string>
+
+#include <boost/thread.hpp>
+
+#include <grpcpp/grpcpp.h>
+#include <grpc/support/log.h>
+
+#include "health.grpc.pb.h"
+#include "bottle.grpc.pb.h"
+
+using grpc::Server;
+using grpc_impl::ServerAsyncResponseWriter;
+using grpc_impl::ServerAsyncWriter;
+using grpc::ServerContext;
+using grpc::ServerCompletionQueue;
+using grpc::Status;
+
+// Advertise shot making service to client
+using mouthwash::ShotCall;
+using mouthwash::Shot;
+using mouthwash::Bottle;
+// Advertise health of bottle server to client
+using grpc::health::v1::HealthCheckRequest;
+using grpc::health::v1::HealthCheckResponse;
+using grpc::health::v1::Health;
+
+
+class BottleServiceImpl final {
+    public:
+    BottleServiceImpl(){}
+
+    ~BottleServiceImpl();
+
+    void Run();
+
+    private:
+    class CallBottleData {
+        public:
+        CallBottleData(
+                Bottle::AsyncService* service,
+                ServerCompletionQueue* cq)
+            : service_(service),
+              cq_(cq), responder_(&ctx_), status_(CREATE) {
+                Proceed();
+            }
+
+        void Proceed();
+
+        private:
+        Bottle::AsyncService *service_;
+        ServerCompletionQueue* cq_;
+        ServerContext ctx_;
+
+        ShotCall request_;
+        Shot response_;
+
+        ServerAsyncResponseWriter<Shot> responder_;
+
+        enum CallStatus{ CREATE, PROCESS, FINISH };
+        CallStatus status_;
+    };
+
+    class CallHealthData {
+        public:
+        CallHealthData(
+                Health::AsyncService* service,
+                ServerCompletionQueue* cq)
+            : service_(service),
+              cq_(cq), responder_(&ctx_), streamResponder_(&ctx_), status_(CREATE) {
+                Proceed();
+            }
+
+        void Proceed();
+
+        private:
+        Health::AsyncService *service_;
+        ServerCompletionQueue* cq_;
+        ServerContext ctx_;
+
+        HealthCheckRequest request_;
+        HealthCheckResponse response_;
+
+        ServerAsyncResponseWriter<HealthCheckResponse> responder_;
+        ServerAsyncWriter<HealthCheckResponse> streamResponder_;
+        boost::thread_group streamThreadGroup_;
+
+        enum CallStatus{ CREATE, PROCESS, FINISH };
+        CallStatus status_;
+    };
+
+    void HandleRpcs();
+    void HandleHealthRpcs();
+    void HandleBottleRpcs();
+
+    std::unique_ptr<ServerCompletionQueue> healthCq_;
+    Health::AsyncService healthService_;
+    std::unique_ptr<ServerCompletionQueue> bottleCq_;
+    Bottle::AsyncService bottleService_;
+    std::unique_ptr<Server> server_;
+    boost::thread_group threadGroup_;
+};
