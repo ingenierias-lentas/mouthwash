@@ -1,1 +1,1 @@
-AI-tainted music generation in webassembly
+AI-tainted music generation
